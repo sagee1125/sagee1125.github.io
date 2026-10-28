@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Sage · Signpost — Personal Site</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #ffffff; }
+  body { font-family: "Avenir Next", "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #ui { position: fixed; inset: 0; pointer-events: none; user-select: none; -webkit-user-select: none; }
+  #site-name { position: absolute; top: 30px; left: 36px; color: #111; }
+  #site-name .name { font-size: 15px; font-weight: 600; letter-spacing: 0.3em; }
+  #site-name .sub  { margin-top: 7px; font-size: 10px; letter-spacing: 0.32em; color: #9a9a9a; }
+  #hint { position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%);
+          font-size: 11px; letter-spacing: 0.22em; color: #b3b3b3; white-space: nowrap;
+          transition: opacity 0.45s ease; }
+  #hint.dim { opacity: 0; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+             background: #fff; color: #c9c9c9; font-size: 11px; letter-spacing: 0.4em;
+             transition: opacity 0.6s ease; z-index: 10; }
+  #loading.done { opacity: 0; pointer-events: none; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="ui">
+  <div id="site-name"><div class="name">SAGE</div><div class="sub">PERSONAL SITE</div></div>
+  <div id="hint" class="dim">拖动环绕 · 点击路牌查看</div>
+</div>
+<div id="loading">LOADING</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ==========================================================
+   可编辑配置
+   ----------------------------------------------------------
+   · SIGN_DEFS：每块路牌的形状 / 高度 / 角度 / 臂长 / 尺寸 / 占位图
+   · image 填图片地址（相对路径或 URL）即可替换占位图，
+     建议比例接近该牌的宽高比（见 def.w / def.h）
+   ========================================================== */
+const SITE = { name: 'SAGE', sub: 'PERSONAL SITE' };
+
+const SIGN_DEFS = [
+  { shape: 'hrect',    y:  1.55, angle:  12, arm: 1.05, w: 2.70, h: 1.45, label: 'ABOUT',    colorA: '#a8c8e8', colorB: '#e3eefb', image: null },
+  { shape: 'circle',   y:  2.85, angle:  83, arm: 0.82, w: 1.90, h: 1.90, label: 'WORKS',    colorA: '#f2c9a0', colorB: '#fbeadb', image: null },
+  { shape: 'vrect',    y:  0.25, angle: 148, arm: 0.95, w: 1.25, h: 2.20, label: 'PROJECTS', colorA: '#9fd0b8', colorB: '#e2f4ea', image: null },
+  { shape: 'triangle', y:  2.15, angle: 208, arm: 1.00, w: 2.35, h: 2.03, label: 'BLOG',     colorA: '#e8a8a8', colorB: '#fae6e6', image: null },
+  { shape: 'square',   y: -1.35, angle: 258, arm: 0.92, w: 1.75, h: 1.75, label: 'GALLERY',  colorA: '#c3b2e0', colorB: '#ece5f8', image: null },
+  { shape: 'circle',   y:  0.95, angle: 326, arm: 0.75, w: 1.35, h: 1.35, label: '2026',     colorA: '#a0cfd8', colorB: '#e0f2f6', image: null },
+  { shape: 'hrect',    y: -0.65, angle: 338, arm: 0.88, w: 2.25, h: 1.15, label: 'CONTACT',  colorA: '#d8c8a8', colorB: '#f5eddd', image: null },
+];
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const app = document.getElementById('app');
+const hintEl = document.getElementById('hint');
+document.querySelector('#site-name .name').textContent = SITE.name;
+document.querySelector('#site-name .sub').textContent = SITE.sub;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0xffffff, 0);           // 画布透明，纯白背景交给 CSS
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+app.appendChild(renderer.domElement);
+const canvas = renderer.domElement;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 100);
+
+// 环境贴图让金属有反射质感
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xe9e9e9, 0.5));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight.position.set(4, 7, 5);
+scene.add(dirLight);
+// 跟随相机的柔和补光：侧棱角度的路牌不至于死黑
+const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
+fillLight.position.set(0, 0, 1);
+camera.add(fillLight);
+scene.add(camera);
+
+/* ---------------- 材质 ---------------- */
+const matBlack     = new THREE.MeshStandardMaterial({ color: 0x151515, metalness: 0.4,  roughness: 0.55 }); // 电线杆 / 横杆
+const matDarkMetal = new THREE.MeshStandardMaterial({ color: 0x3a3a3c, metalness: 0.85, roughness: 0.35 }); // 深灰箍环
+const matLightMetal= new THREE.MeshStandardMaterial({ color: 0xd6d7d9, metalness: 0.9,  roughness: 0.3  }); // 浅灰背板 / 边框
+
+/* ---------------- 路杆与箍环 ---------------- */
+const POLE_H = 8, POLE_R = 0.13, BOARD_D = 0.07, FRAME_W = 0.09, FRAME_D = 0.05;
+const UP = new THREE.Vector3(0, 1, 0);
+const ORIGIN = new THREE.Vector3(0, 0, 0);
+const TARGET0 = new THREE.Vector3(0, 0.15, 0);   // 环绕中心
+
+const root = new THREE.Group();                  // 整个装置（聚焦时整体旋转/平移）
+scene.add(root);
+
+const pole = new THREE.Mesh(new THREE.CylinderGeometry(POLE_R, POLE_R, POLE_H, 40), matBlack);
+root.add(pole);
+const cap = new THREE.Mesh(new THREE.SphereGeometry(POLE_R, 32, 16), matBlack);
+cap.scale.y = 0.5;
+cap.position.y = POLE_H / 2;
+root.add(cap);
+
+/* ---------------- 形状工具 ---------------- */
+function roundedRectShape(w, h, r) {
+  const s = new THREE.Shape();
+  const x = -w / 2, y = -h / 2;
+  r = Math.min(r, w / 2, h / 2);
+  s.moveTo(x + r, y);
+  s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+  return s;
+}
+function circleShape(r) {
+  const s = new THREE.Shape();
+  s.absarc(0, 0, r, 0, Math.PI * 2, false);
+  return s;
+}
+function roundedPolygonShape(points, radius) {
+  const shape = new THREE.Shape();
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const p = points[i], prev = points[(i - 1 + n) % n], next = points[(i + 1) % n];
+    const d1 = new THREE.Vector2().subVectors(prev, p);
+    const d2 = new THREE.Vector2().subVectors(next, p);
+    const r1 = Math.min(radius, d1.length() * 0.5);
+    const r2 = Math.min(radius, d2.length() * 0.5);
+    const a = p.clone().addScaledVector(d1.normalize(), r1);
+    const b = p.clone().addScaledVector(d2.normalize(), r2);
+    if (i === 0) shape.moveTo(a.x, a.y); else shape.lineTo(a.x, a.y);
+    shape.quadraticCurveTo(p.x, p.y, b.x, b.y);
+  }
+  shape.closePath();
+  return shape;
+}
+function triangleShape(side, corner) {
+  const Rc = side / Math.sqrt(3);   // 外接圆半径，顶点朝上，中心即形心
+  return roundedPolygonShape([
+    new THREE.Vector2(0, Rc),
+    new THREE.Vector2(-side / 2, -Rc / 2),
+    new THREE.Vector2(side / 2, -Rc / 2),
+  ], corner);
+}
+function makeOutline(def) {
+  switch (def.shape) {
+    case 'hrect':
+    case 'vrect':   return roundedRectShape(def.w, def.h, 0.06);
+    case 'square':  return roundedRectShape(def.w, def.h, 0.1);
+    case 'circle':  return circleShape(def.w / 2);
+    case 'triangle':return triangleShape(def.w, 0.16);
+  }
+}
+// 金属边框：外轮廓 + 内孔（内孔 = 板面轮廓，宽度向外扩 FRAME_W）
+function makeFrameGeometry(def, outline) {
+  let outer;
+  switch (def.shape) {
+    case 'hrect':
+    case 'vrect':   outer = roundedRectShape(def.w + 2 * FRAME_W, def.h + 2 * FRAME_W, 0.06 + FRAME_W); break;
+    case 'square':  outer = roundedRectShape(def.w + 2 * FRAME_W, def.h + 2 * FRAME_W, 0.1 + FRAME_W); break;
+    case 'circle':  outer = circleShape(def.w / 2 + FRAME_W); break;
+    case 'triangle': {
+      const Rin = def.w / (2 * Math.sqrt(3));       // 等边三角形内切圆半径，均匀外扩 = 形心缩放
+      const k = (Rin + FRAME_W) / Rin;
+      outer = triangleShape(def.w * k, 0.16 * k);
+      break;
+    }
+  }
+  outer.holes.push(outline);
+  return new THREE.ExtrudeGeometry(outer, { depth: FRAME_D, bevelEnabled: false, curveSegments: 48 });
+}
+// ShapeGeometry 的 UV 是原始坐标，按包围盒归一化到 0-1，图片才能铺满
+function normalizeUVs(geo) {
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox;
+  const sx = Math.max(1e-6, bb.max.x - bb.min.x);
+  const sy = Math.max(1e-6, bb.max.y - bb.min.y);
+  const pos = geo.attributes.position, uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, (pos.getX(i) - bb.min.x) / sx, (pos.getY(i) - bb.min.y) / sy);
+  }
+  uv.needsUpdate = true;
+}
+
+/* ---------------- 占位贴图（canvas 生成） ---------------- */
+function textureAspect(def) {
+  if (def.shape === 'circle' || def.shape === 'square') return 1;
+  if (def.shape === 'triangle') return Math.sqrt(3) / 2;
+  return def.h / def.w;
+}
+function makePlaceholderTexture(def, index) {
+  const W = 640, H = Math.round(W * textureAspect(def));
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, def.colorA);
+  g.addColorStop(1, def.colorB);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = '700 ' + Math.round(W * 0.4) + 'px "Avenir Next", Arial, sans-serif';
+  ctx.fillText(String(index + 1).padStart(2, '0'), W / 2, H * 0.46);
+  ctx.fillStyle = 'rgba(35,35,35,0.85)';
+  ctx.font = '600 ' + Math.round(W * 0.055) + 'px "Avenir Next", Arial, sans-serif';
+  ctx.fillText(def.label.split('').join(' '), W / 2, H * 0.8);
+  ctx.fillStyle = 'rgba(35,35,35,0.4)';
+  ctx.font = '500 ' + Math.round(W * 0.03) + 'px "Avenir Next", Arial, sans-serif';
+  ctx.fillText('R E P L A C E   M E', W / 2, H * 0.13);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/* ---------------- 组装路牌 ---------------- */
+const signs = [];        // { pivot, group, anchor, def }
+const pickMeshes = [];   // 参与射线拾取的网格
+
+SIGN_DEFS.forEach((def, i) => {
+  const outline = makeOutline(def);
+
+  const pivot = new THREE.Group();               // 绕杆的朝向
+  pivot.rotation.y = THREE.MathUtils.degToRad(def.angle);
+  pivot.position.y = def.y;
+  root.add(pivot);
+
+  // 黑色支撑横杆：从杆身伸到牌背
+  const zBack = POLE_R + def.arm;
+  const armLen = zBack - (POLE_R - 0.06);
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, armLen, 20), matBlack);
+  arm.rotation.x = Math.PI / 2;
+  arm.position.z = (POLE_R - 0.06 + zBack) / 2;
+  pivot.add(arm);
+
+  // 横杆与牌背的连接板
+  const plate = new THREE.Mesh(
+    new THREE.BoxGeometry(Math.min(0.42, def.w * 0.45), Math.min(0.3, def.h * 0.4), 0.05),
+    matBlack
+  );
+  plate.position.z = zBack - 0.015;
+  pivot.add(plate);
+
+  const group = new THREE.Group();               // 牌体自身坐标系：+z 为正面朝外
+  group.position.z = zBack;
+  pivot.add(group);
+
+  // 板体（带厚度，背面即浅灰金属背板）
+  const body = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(outline, { depth: BOARD_D, bevelEnabled: false, curveSegments: 48 }),
+    matLightMetal
+  );
+  group.add(body);
+
+  // 正面贴图：独立 ShapeGeometry 承载，避免 ExtrudeGeometry 默认 UV 黑图问题
+  const frontGeo = new THREE.ShapeGeometry(outline, 48);
+  normalizeUVs(frontGeo);
+  const frontMat = new THREE.MeshStandardMaterial({
+    map: makePlaceholderTexture(def, i),
+    roughness: 0.85,
+    metalness: 0.0,
+    envMapIntensity: 0.45,
+  });
+  if (def.image) {
+    new THREE.TextureLoader().load(def.image, (t) => {
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 8;
+      frontMat.map = t;
+      frontMat.needsUpdate = true;
+    });
+  }
+  const front = new THREE.Mesh(frontGeo, frontMat);
+  front.position.z = BOARD_D + 0.002;
+  group.add(front);
+
+  // 浅灰金属边框，嵌进板面并略微凸出
+  const frame = new THREE.Mesh(makeFrameGeometry(def, outline), matLightMetal);
+  frame.position.z = BOARD_D + 0.03 - FRAME_D;
+  group.add(frame);
+
+  // 板面中心锚点：聚焦动画的目标点
+  const anchor = new THREE.Object3D();
+  anchor.position.z = BOARD_D / 2;
+  group.add(anchor);
+
+  // 杆身上的深灰箍环（横杆安装座）
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.1, 36), matDarkMetal);
+  ring.position.y = def.y;
+  root.add(ring);
+
+  [body, front, frame, arm, plate].forEach((m) => {
+    m.userData.signIndex = i;
+    pickMeshes.push(m);
+  });
+  signs.push({ pivot, group, anchor, def });
+});
+
+/* ---------------- 控制器：只允许水平环绕 ---------------- */
+function sphericalPos(az, dist) {
+  return new THREE.Vector3(Math.sin(az) * dist, TARGET0.y, Math.cos(az) * dist);
+}
+function currentAzimuth() {
+  return Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
+}
+function shortestAngle(d) {
+  return Math.atan2(Math.sin(d), Math.cos(d));
+}
+function easeInOutCubic(k) {
+  return k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+}
+function easeOutCubic(k) {
+  return 1 - Math.pow(1 - k, 3);
+}
+
+const controls = new OrbitControls(camera, canvas);
+controls.target.copy(TARGET0);
+controls.enablePan = false;
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.rotateSpeed = 0.55;
+controls.minPolarAngle = Math.PI / 2;   // 锁定上下角度
+controls.maxPolarAngle = Math.PI / 2;
+controls.minDistance = 7;
+controls.maxDistance = 18;
+controls.enabled = false;               // 开场动画结束后开启
+
+/* ---------------- 状态机与补间 ---------------- */
+let mode = 'intro';        // intro | overview | focus | animating
+let focused = -1;
+let savedView = null;      // 进入聚焦前的整体视角 { az, dist }
+
+const anims = new Set();
+function animate(dur, onUpdate, onDone, ease = easeInOutCubic) {
+  const a = { start: performance.now(), dur, onUpdate, onDone, ease };
+  anims.add(a);
+  return a;
+}
+function stepAnims(now) {
+  for (const a of [...anims]) {
+    const k = Math.min(1, (now - a.start) / a.dur);
+    a.onUpdate(a.ease(k), k);
+    if (k >= 1) {
+      anims.delete(a);
+      if (a.onDone) a.onDone();
+    }
+  }
+}
+function setHint(text) {
+  hintEl.textContent = text;
+  hintEl.classList.remove('dim');
+}
+function focusDistance(def) {
+  return Math.max(def.w, def.h) * 1.35 + 1.55;
+}
+
+/* 开场：相机从远处推进 */
+camera.position.copy(sphericalPos(0.52, 15.5));
+camera.lookAt(TARGET0);
+animate(1400, (e) => {
+  camera.position.lerpVectors(sphericalPos(0.52, 15.5), sphericalPos(0.52, 11.5), e);
+  camera.lookAt(TARGET0);
+}, () => {
+  mode = 'overview';
+  controls.enabled = true;
+  controls.update();
+  setHint('拖动环绕 · 点击路牌查看');
+}, easeOutCubic);
+
+/* 聚焦：整体转向 + 左移，相机正对该牌正面 */
+function focusSign(i) {
+  if (mode === 'animating' || mode === 'intro') return;
+  if (mode === 'focus' && i === focused) return;
+  if (mode === 'overview') savedView = { az: currentAzimuth(), dist: camera.position.distanceTo(TARGET0) };
+
+  focused = i;
+  const def = signs[i].def;
+  const a = THREE.MathUtils.degToRad(def.angle);
+  const camAz = currentAzimuth();          // 保持当前相机方位，让装置转过来
+
+  const R0 = root.rotation.y;
+  const P0 = root.position.clone();
+  let R1 = camAz - a;                      // 使该牌法线方位 = camAz
+  R1 = R0 + shortestAngle(R1 - R0);        // 最短角路径：从背面点击也会自动转正
+
+  // 整组沿相机右方向向左平移：路杆滑到画面左侧，路牌保持居中
+  const shift = def.arm + POLE_R + 1.15;
+  const P1 = new THREE.Vector3(-Math.cos(camAz) * shift, 0, Math.sin(camAz) * shift);
+
+  const L = POLE_R + def.arm + BOARD_D / 2;
+  const anchorRoot = new THREE.Vector3(Math.sin(a) * L, def.y, Math.cos(a) * L);
+  const anchorAt = (R, P) => anchorRoot.clone().applyAxisAngle(UP, R).add(P);
+
+  const D = focusDistance(def);
+  const center1 = anchorAt(R1, P1);
+  const camPos1 = center1.clone().add(new THREE.Vector3(Math.sin(camAz) * D, 0, Math.cos(camAz) * D));
+
+  const startPos = camera.position.clone();
+  const startTgt = controls.target.clone();
+
+  anims.clear();
+  controls.enabled = false;
+  mode = 'animating';
+  setHint('点击空白处返回');
+
+  animate(1150, (e) => {
+    root.rotation.y = R0 + (R1 - R0) * e;
+    root.position.lerpVectors(P0, P1, e);
+    const center = anchorAt(root.rotation.y, root.position);   // 目标点实时跟随
+    camera.position.lerpVectors(startPos, camPos1, e);
+    controls.target.lerpVectors(startTgt, center, e);
+    camera.lookAt(controls.target);
+  }, () => {
+    mode = 'focus';
+  });
+}
+
+/* 退出聚焦：恢复进入前的整体视角 */
+function unfocus() {
+  if (mode !== 'focus') return;
+  const v = savedView || { az: 0.52, dist: 11.5 };
+  const endPos = sphericalPos(v.az, v.dist);
+  const startPos = camera.position.clone();
+  const startTgt = controls.target.clone();
+  const R0 = root.rotation.y;
+  const P0 = root.position.clone();
+
+  anims.clear();
+  mode = 'animating';
+  focused = -1;
+  setHint('拖动环绕 · 点击路牌查看');
+
+  animate(1050, (e) => {
+    root.rotation.y = R0 * (1 - e);
+    root.position.lerpVectors(P0, ORIGIN, e);
+    camera.position.lerpVectors(startPos, endPos, e);
+    controls.target.lerpVectors(startTgt, TARGET0, e);
+    camera.lookAt(controls.target);
+  }, () => {
+    mode = 'overview';
+    focused = -1;
+    controls.enabled = true;
+    controls.update();
+  });
+}
+
+/* ---------------- 拾取（点击 vs 拖拽区分） ---------------- */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let downX = 0, downY = 0, downId = -1, dragged = false;
+
+function raycastSign(e) {
+  ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(pickMeshes, false);
+  return hits.length ? hits[0].object.userData.signIndex : -1;
+}
+function pick(e) {
+  if (mode === 'animating' || mode === 'intro') return;
+  const i = raycastSign(e);
+  if (i >= 0) {
+    focusSign(i);            // overview / focus 下点击路牌都进入或切换聚焦
+  } else if (mode === 'focus') {
+    unfocus();               // 点击空白处退出
+  }
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (!e.isPrimary) return;
+  downX = e.clientX; downY = e.clientY;
+  downId = e.pointerId;
+  dragged = false;
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (e.isPrimary && e.pointerId === downId &&
+      Math.hypot(e.clientX - downX, e.clientY - downY) > 6) dragged = true;
+  if (mode === 'animating' || mode === 'intro') { canvas.style.cursor = 'default'; return; }
+  canvas.style.cursor = raycastSign(e) >= 0 ? 'pointer' : (mode === 'overview' ? 'grab' : 'default');
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (!e.isPrimary || e.pointerId !== downId) return;
+  downId = -1;
+  if (dragged) return;
+  pick(e);
+});
+canvas.addEventListener('pointercancel', () => { downId = -1; });
+addEventListener('keydown', (e) => { if (e.key === 'Escape') unfocus(); });
+
+/* ---------------- 主循环 ---------------- */
+renderer.setAnimationLoop((now) => {
+  stepAnims(now);
+  if (mode === 'overview') controls.update();   // 动画/聚焦期间相机由补间接管
+  renderer.render(scene, camera);
+});
+document.getElementById('loading').classList.add('done');
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// 调试句柄（控制台可用）
+window.__SIGNPOST_DEBUG__ = { scene, camera, controls, root, signs, pickMeshes, raycaster };
+</script>
+</body>
+</html>
