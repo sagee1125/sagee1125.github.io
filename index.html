@@ -241,24 +241,17 @@ SIGN_DEFS.forEach((def, i) => {
   pivot.position.y = def.y;
   root.add(pivot);
 
-  // Black support arm reaching from the pole to the back of the board
-  const zBack = POLE_R + def.arm;
-  const armLen = zBack - (POLE_R - 0.06);
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, armLen, 20), matBlack);
-  arm.rotation.x = Math.PI / 2;
-  arm.position.z = (POLE_R - 0.06 + zBack) / 2;
-  pivot.add(arm);
-
-  // Connector plate between arm and board
-  const plate = new THREE.Mesh(
-    new THREE.BoxGeometry(Math.min(0.42, def.w * 0.45), Math.min(0.3, def.h * 0.4), 0.05),
-    matBlack
-  );
-  plate.position.z = zBack - 0.015;
-  pivot.add(plate);
+  // Horizontal rod lying IN the board's plane: from the pole out to the board's inner edge
+  const zOff = POLE_R + 0.02;                    // board back plane sits just outside the pole
+  const innerX = POLE_R + def.arm;               // board inner edge
+  const rodLen = def.arm + 0.10;                 // embeds into the pole and the board edge
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, rodLen, 16), matBlack);
+  rod.rotation.z = Math.PI / 2;
+  rod.position.set((POLE_R - 0.06 + innerX + 0.04) / 2, 0, zOff + BOARD_D / 2);
+  pivot.add(rod);
 
   const group = new THREE.Group();               // board space: +z faces outward
-  group.position.z = zBack;
+  group.position.set(innerX + def.w / 2, 0, zOff);
   pivot.add(group);
 
   // Board body (thin, the back face doubles as the light-gray metal back plate)
@@ -304,7 +297,7 @@ SIGN_DEFS.forEach((def, i) => {
   ring.position.y = def.y;
   root.add(ring);
 
-  [body, front, frame, arm, plate].forEach((m) => {
+  [body, front, frame, rod].forEach((m) => {
     m.userData.signIndex = i;
     pickMeshes.push(m);
   });
@@ -394,11 +387,17 @@ function focusSign(i) {
   R1 = R0 + shortestAngle(R1 - R0);        // shortest path: back-side clicks turn to the front
 
   // Slide the rig left along the camera-right axis; the sign stays centered
-  const shift = def.arm + POLE_R + 1.15;
+  const shift = def.w * 0.55 + 1.2;
   const P1 = new THREE.Vector3(-Math.cos(camAz) * shift, 0, Math.sin(camAz) * shift);
 
-  const L = POLE_R + def.arm + BOARD_D / 2;
-  const anchorRoot = new THREE.Vector3(Math.sin(a) * L, def.y, Math.cos(a) * L);
+  // Board center in root coordinates (board hangs off the pole's side, rod in its plane)
+  const cxL = POLE_R + def.arm + def.w / 2;
+  const czL = POLE_R + 0.02 + BOARD_D / 2;
+  const anchorRoot = new THREE.Vector3(
+    cxL * Math.cos(a) + czL * Math.sin(a),
+    def.y,
+    -cxL * Math.sin(a) + czL * Math.cos(a)
+  );
   const anchorAt = (R, P) => anchorRoot.clone().applyAxisAngle(UP, R).add(P);
 
   const D = focusDistance(def);
