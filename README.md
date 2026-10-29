@@ -1,12 +1,17 @@
 # sagee1125.github.io
 
-Personal site of Sage (CHEN Saijing) — a single-file Three.js scene: a 3D signpost with 7 clickable signs on a pure white background. Live at https://sagee1125.github.io
+Personal site of Sage (CHEN Saijing) — a single-page Three.js scene: a 3D signpost with 7 clickable signs floating in a procedural blue sky with drifting clouds. Live at https://sagee1125.github.io
 
 This README is written for AI coding agents working on this repo.
 
+## Files
+
+- `index.html` — the whole signpost scene (Three.js r170 via jsdelivr importmap)
+- `sky.js` — background sky: WebGL fragment shader (adapted from Aceternity UI's cloud-shader), ported as a dependency-free classic script. Tune colors/speed in `SKY_CONFIG` at the top.
+
 ## Run
 
-- Open `index.html` directly in a browser (Three.js r170 loads via jsdelivr importmap; the inline module + remote imports work from `file://`), or serve the folder: `npx serve .`
+- Open `index.html` directly in a browser (works from `file://`; `sky.js` is a classic script so local loading is fine), or serve the folder: `npx serve .`
 
 ## Deploy
 
