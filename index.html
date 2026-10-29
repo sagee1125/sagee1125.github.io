@@ -12,9 +12,9 @@
   #app { position: fixed; inset: 0; }
   #app canvas { display: block; }
   #ui { position: fixed; inset: 0; pointer-events: none; user-select: none; -webkit-user-select: none; }
-  #site-name { position: absolute; top: 30px; left: 36px; color: #111; }
+  #site-name { position: absolute; top: 30px; left: 36px; color: rgba(255, 255, 255, 0.95); text-shadow: 0 1px 8px rgba(30, 60, 100, 0.35); }
   #site-name .name { font-size: 15px; font-weight: 600; letter-spacing: 0.3em; }
-  #site-name .sub  { margin-top: 7px; font-size: 10px; letter-spacing: 0.32em; color: #9a9a9a; }
+  #site-name .sub  { margin-top: 7px; font-size: 10px; letter-spacing: 0.32em; color: rgba(255, 255, 255, 0.65); }
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
              background: #fff; color: #c9c9c9; font-size: 11px; letter-spacing: 0.4em;
              transition: opacity 0.6s ease; z-index: 10; }
@@ -107,7 +107,7 @@ const matLightMetal= new THREE.MeshStandardMaterial({ color: 0xbfc2c6, metalness
 const POLE_H = 8.6, POLE_R = 0.13, BOARD_D = 0.07, FRAME_W = 0.09, FRAME_D = 0.05;
 const UP = new THREE.Vector3(0, 1, 0);
 const ORIGIN = new THREE.Vector3(0, 0, 0);
-const TARGET0 = new THREE.Vector3(0, 0.15, 0);   // orbit pivot
+const TARGET0 = new THREE.Vector3(0, 1.0, 0);   // orbit pivot (raised so the pole sits lower, with headroom)
 
 const root = new THREE.Group();                  // whole installation (rotated/shifted while focused)
 scene.add(root);

@@ -12,8 +12,8 @@
     speed: 1,                    // animation speed multiplier, 1 = default drift
     count: 6,                    // number of clouds (1-6)
     cloudColor: '#fbf8f2',       // cloud tint
-    skyTopColor: '#7eb3e8',      // soft blue at the top
-    skyBottomColor: '#d6eaf8'    // pale blue near the horizon
+    skyTopColor: '#5a97d8',      // deeper blue at the top
+    skyBottomColor: '#cbe3f7'    // pale blue near the horizon
   };
 
   var VERT = '\nattribute vec2 a_pos;\nvarying vec2 v_uv;\nvoid main() {\n  v_uv = a_pos * 0.5 + 0.5;\n  gl_Position = vec4(a_pos, 0.0, 1.0);\n}\n';
