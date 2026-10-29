@@ -101,7 +101,7 @@ scene.add(camera);
 /* ---------------- Materials ---------------- */
 const matBlack     = new THREE.MeshStandardMaterial({ color: 0x151515, metalness: 0.4,  roughness: 0.55 }); // pole / arms
 const matDarkMetal = new THREE.MeshStandardMaterial({ color: 0x3a3a3c, metalness: 0.85, roughness: 0.35 }); // clamp rings
-const matLightMetal= new THREE.MeshStandardMaterial({ color: 0xd6d7d9, metalness: 0.9,  roughness: 0.3  }); // back plate / frame
+const matLightMetal= new THREE.MeshStandardMaterial({ color: 0xbfc2c6, metalness: 0.9,  roughness: 0.3  }); // back plate / frame
 
 /* ---------------- Pole and clamp rings ---------------- */
 const POLE_H = 8.6, POLE_R = 0.13, BOARD_D = 0.07, FRAME_W = 0.09, FRAME_D = 0.05;
@@ -225,6 +225,14 @@ function normalizeUVs(geo) {
 }
 
 /* ---------------- Generated placeholder textures ---------------- */
+// Multiply a hex color by a factor (used to deepen the placeholder gradients)
+function shadeHex(hex, f) {
+  var n = parseInt(hex.slice(1), 16);
+  var r = Math.round(((n >> 16) & 255) * f);
+  var g = Math.round(((n >> 8) & 255) * f);
+  var b = Math.round((n & 255) * f);
+  return 'rgb(' + r + ',' + g + ',' + b + ')';
+}
 function textureAspect(def) {
   if (def.shape === 'circle' || def.shape === 'square') return 1;
   if (def.shape === 'triangle') return Math.sqrt(3) / 2;
@@ -236,8 +244,8 @@ function makePlaceholderTexture(def, index) {
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
   const g = ctx.createLinearGradient(0, 0, W, H);
-  g.addColorStop(0, def.colorA);
-  g.addColorStop(1, def.colorB);
+  g.addColorStop(0, shadeHex(def.colorA, 0.9));
+  g.addColorStop(1, shadeHex(def.colorB, 0.9));
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
@@ -314,7 +322,7 @@ SIGN_DEFS.forEach((def, i) => {
     map: makePlaceholderTexture(def, i),
     roughness: 0.85,
     metalness: 0.0,
-    envMapIntensity: 0.45,
+    envMapIntensity: 0.3,
   });
   if (def.image) {
     new THREE.TextureLoader().load(def.image, (t) => {
