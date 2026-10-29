@@ -24,6 +24,7 @@ All site content lives in `SIGN_DEFS` at the top of `index.html`. One entry per 
 - `shape`: `hrect` | `vrect` | `square` | `circle` | `triangle` | `arrow` (rectangle ending in an outward arrowhead; triangle and arrow have rounded corners)
 - `y`: height on the pole; `angle`: degrees around the pole; `arm`: short neck between pole and board — boards hang off the pole's side, joined by a horizontal rod lying in the board's plane
 - `w` / `h`: board size (circle = diameter, triangle = side length)
+- `focus`: optional focus placement — `top` (board rises on screen, bottom-right stays free for text) or `bottom` (board sinks, top-right stays free); omit for centered
 - `label`, `colorA`, `colorB`: text and gradient for the generated placeholder texture
 - `image`: path or URL of a real image; `null` = generated placeholder. Aspect ratio close to `w : h` looks best.
 

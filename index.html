@@ -59,13 +59,13 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 const SITE = { name: 'SAGE', sub: 'PERSONAL SITE' };
 
 const SIGN_DEFS = [
-  { shape: 'arrow',    y:  1.25, angle:  30, arm: 0.28, w: 2.90, h: 0.80, label: 'ABOUT',    colorA: '#a8c8e8', colorB: '#e3eefb', image: null },
-  { shape: 'circle',   y:  3.30, angle:  20, arm: 0.00, w: 1.90, h: 1.90, centered: true, label: 'WORKS', colorA: '#f2c9a0', colorB: '#fbeadb', image: null },
-  { shape: 'arrow',    y: -0.10, angle: 148, arm: 0.24, w: 2.55, h: 0.80, label: 'PROJECTS', colorA: '#9fd0b8', colorB: '#e2f4ea', image: null },
-  { shape: 'arrow',    y:  2.35, angle: 208, arm: 0.40, w: 2.30, h: 0.80, label: 'BLOG',     colorA: '#e8a8a8', colorB: '#fae6e6', image: null },
-  { shape: 'arrow',    y: -1.35, angle: 258, arm: 0.30, w: 2.70, h: 0.80, label: 'GALLERY',  colorA: '#c3b2e0', colorB: '#ece5f8', image: null },
+  { shape: 'arrow',    y:  1.25, angle:  30, arm: 0.28, w: 2.90, h: 0.80, focus: 'bottom', label: 'ABOUT',    colorA: '#a8c8e8', colorB: '#e3eefb', image: null },
+  { shape: 'circle',   y:  3.30, angle:  93, arm: 0.00, w: 1.90, h: 1.90, centered: true, label: 'WORKS', colorA: '#f2c9a0', colorB: '#fbeadb', image: null },
+  { shape: 'arrow',    y: -0.10, angle: 148, arm: 0.24, w: 2.55, h: 0.80, focus: 'top', label: 'PROJECTS', colorA: '#9fd0b8', colorB: '#e2f4ea', image: null },
+  { shape: 'arrow',    y:  2.35, angle: 208, arm: 0.40, w: 2.30, h: 0.80, focus: 'bottom', label: 'BLOG',     colorA: '#e8a8a8', colorB: '#fae6e6', image: null },
+  { shape: 'arrow',    y: -1.35, angle: 258, arm: 0.30, w: 2.70, h: 0.80, focus: 'bottom', label: 'GALLERY',  colorA: '#c3b2e0', colorB: '#ece5f8', image: null },
   { shape: 'hrect',    y:  0.70, angle: 326, arm: 0.00, w: 4.80, h: 1.10, centered: true, label: '2026', colorA: '#a0cfd8', colorB: '#e0f2f6', image: null },
-  { shape: 'arrow',    y: -0.65, angle: 352, arm: 0.32, w: 2.45, h: 0.80, label: 'CONTACT',  colorA: '#d8c8a8', colorB: '#f5eddd', image: null },
+  { shape: 'arrow',    y: -0.65, angle: 352, arm: 0.32, w: 2.45, h: 0.80, focus: 'top', label: 'CONTACT',  colorA: '#d8c8a8', colorB: '#f5eddd', image: null },
 ];
 
 /* ---------------- Renderer / scene / camera ---------------- */
@@ -455,9 +455,22 @@ function focusSign(i) {
   );
   const anchorAt = (R, P) => anchorRoot.clone().applyAxisAngle(UP, R).add(P);
 
-  const D = focusDistance(def);
+  let D = focusDistance(def);
   const center1 = anchorAt(R1, P1);
-  const camPos1 = center1.clone().add(new THREE.Vector3(Math.sin(camAz) * D, 0, Math.cos(camAz) * D));
+
+  // Per-sign focus placement: aim the camera beside the board so it sits
+  // off-center ('top' = upper-left, keeping bottom-right free for text;
+  // 'bottom' = lower-left, keeping top-right free). Centered boards ignore it.
+  let targetOffset = new THREE.Vector3(0, 0, 0);
+  if (def.focus === 'top' || def.focus === 'bottom') {
+    const dir = def.focus === 'top' ? -1 : 1;   // aim below (sign rises) or above (sign sinks)
+    const right = new THREE.Vector3(Math.cos(camAz), 0, -Math.sin(camAz));
+    targetOffset.addScaledVector(UP, dir * 0.95);
+    targetOffset.addScaledVector(right, 0.55);
+    D += 0.5;                                   // a little extra distance so nothing clips
+  }
+  const target1 = center1.clone().add(targetOffset);
+  const camPos1 = target1.clone().add(new THREE.Vector3(Math.sin(camAz) * D, 0, Math.cos(camAz) * D));
 
   const startPos = camera.position.clone();
   const startTgt = controls.target.clone();
@@ -469,7 +482,7 @@ function focusSign(i) {
   animate(1150, (e) => {
     root.rotation.y = R0 + (R1 - R0) * e;
     root.position.lerpVectors(P0, P1, e);
-    const center = anchorAt(root.rotation.y, root.position);   // target follows the board live
+    const center = anchorAt(root.rotation.y, root.position).add(targetOffset);   // target follows the board live
     camera.position.lerpVectors(startPos, camPos1, e);
     controls.target.lerpVectors(startTgt, center, e);
     camera.lookAt(controls.target);
