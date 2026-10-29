@@ -46,6 +46,10 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
    ----------------------------------------------------------
    - SIGN_DEFS: one entry per sign (shape / height / angle /
      arm length / size / placeholder image).
+     shape: hrect | vrect | square | circle | triangle | arrow
+     (arrow = rectangle ending in an arrowhead pointing outward;
+      arm = short neck keeping the board clear of the pole, with
+      the rod bridging the gap so boards read as grown from it).
    - Set `image` to a path or URL to replace the generated
      placeholder. Aspect ratio close to w:h looks best.
    - Angles are collision-free against the default sizes;
@@ -54,13 +58,13 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 const SITE = { name: 'SAGE', sub: 'PERSONAL SITE' };
 
 const SIGN_DEFS = [
-  { shape: 'hrect',    y:  1.25, angle:  40, arm: 1.05, w: 2.90, h: 1.05, label: 'ABOUT',    colorA: '#a8c8e8', colorB: '#e3eefb', image: null },
-  { shape: 'circle',   y:  3.30, angle:  93, arm: 1.35, w: 1.90, h: 1.90, label: 'WORKS',    colorA: '#f2c9a0', colorB: '#fbeadb', image: null },
-  { shape: 'hrect',    y: -0.10, angle: 148, arm: 1.35, w: 2.40, h: 1.15, label: 'PROJECTS', colorA: '#9fd0b8', colorB: '#e2f4ea', image: null },
-  { shape: 'hrect',    y:  2.35, angle: 208, arm: 0.75, w: 2.30, h: 1.25, label: 'BLOG',     colorA: '#e8a8a8', colorB: '#fae6e6', image: null },
-  { shape: 'square',   y: -1.35, angle: 258, arm: 1.30, w: 1.95, h: 1.95, label: 'GALLERY',  colorA: '#c3b2e0', colorB: '#ece5f8', image: null },
-  { shape: 'circle',   y:  0.95, angle: 326, arm: 0.90, w: 1.45, h: 1.45, label: '2026',     colorA: '#a0cfd8', colorB: '#e0f2f6', image: null },
-  { shape: 'hrect',    y: -0.65, angle: 352, arm: 0.95, w: 2.40, h: 0.95, label: 'CONTACT',  colorA: '#d8c8a8', colorB: '#f5eddd', image: null },
+  { shape: 'hrect',    y:  1.25, angle:  40, arm: 0.28, w: 2.90, h: 1.05, label: 'ABOUT',    colorA: '#a8c8e8', colorB: '#e3eefb', image: null },
+  { shape: 'circle',   y:  3.30, angle:  93, arm: 0.35, w: 1.90, h: 1.90, label: 'WORKS',    colorA: '#f2c9a0', colorB: '#fbeadb', image: null },
+  { shape: 'arrow',    y: -0.10, angle: 148, arm: 0.24, w: 2.60, h: 1.15, label: 'PROJECTS', colorA: '#9fd0b8', colorB: '#e2f4ea', image: null },
+  { shape: 'hrect',    y:  2.35, angle: 208, arm: 0.40, w: 2.30, h: 1.25, label: 'BLOG',     colorA: '#e8a8a8', colorB: '#fae6e6', image: null },
+  { shape: 'hrect',    y: -1.35, angle: 258, arm: 0.30, w: 2.60, h: 1.15, label: 'GALLERY',  colorA: '#c3b2e0', colorB: '#ece5f8', image: null },
+  { shape: 'circle',   y:  0.95, angle: 326, arm: 0.26, w: 1.45, h: 1.45, label: '2026',     colorA: '#a0cfd8', colorB: '#e0f2f6', image: null },
+  { shape: 'arrow',    y: -0.65, angle: 352, arm: 0.32, w: 2.50, h: 1.00, label: 'CONTACT',  colorA: '#d8c8a8', colorB: '#f5eddd', image: null },
 ];
 
 /* ---------------- Renderer / scene / camera ---------------- */
@@ -163,6 +167,16 @@ function makeOutline(def) {
     case 'square':  return roundedRectShape(def.w, def.h, 0.1);
     case 'circle':  return circleShape(def.w / 2);
     case 'triangle':return triangleShape(def.w, 0.16);
+    case 'arrow': {                              // rectangle ending in an outward arrowhead (+x)
+      const a = Math.min(0.55, def.h * 0.6);
+      return roundedPolygonShape([
+        new THREE.Vector2(-def.w / 2, -def.h / 2),
+        new THREE.Vector2(def.w / 2 - a, -def.h / 2),
+        new THREE.Vector2(def.w / 2, 0),
+        new THREE.Vector2(def.w / 2 - a, def.h / 2),
+        new THREE.Vector2(-def.w / 2, def.h / 2),
+      ], 0.05);
+    }
   }
 }
 // Metal frame: outer contour with the board outline as its hole (FRAME_W wide)
@@ -177,6 +191,19 @@ function makeFrameGeometry(def, outline) {
       const Rin = def.w / (2 * Math.sqrt(3));   // inradius; a uniform outward offset equals scaling about the centroid
       const k = (Rin + FRAME_W) / Rin;
       outer = triangleShape(def.w * k, 0.16 * k);
+      break;
+    }
+    case 'arrow': {
+      const L = def.w + 2 * FRAME_W;
+      const H = def.h + 2 * FRAME_W;
+      const a = Math.min(0.55, def.h * 0.6) + FRAME_W;
+      outer = roundedPolygonShape([
+        new THREE.Vector2(-L / 2, -H / 2),
+        new THREE.Vector2(L / 2 - a, -H / 2),
+        new THREE.Vector2(L / 2, 0),
+        new THREE.Vector2(L / 2 - a, H / 2),
+        new THREE.Vector2(-L / 2, H / 2),
+      ], 0.05 + FRAME_W);
       break;
     }
   }
