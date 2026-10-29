@@ -101,7 +101,7 @@ scene.add(camera);
 /* ---------------- Materials ---------------- */
 const matBlack     = new THREE.MeshStandardMaterial({ color: 0x151515, metalness: 0.4,  roughness: 0.55 }); // pole / arms
 const matDarkMetal = new THREE.MeshStandardMaterial({ color: 0x3a3a3c, metalness: 0.85, roughness: 0.35 }); // clamp rings
-const matLightMetal= new THREE.MeshStandardMaterial({ color: 0xbfc2c6, metalness: 0.9,  roughness: 0.3  }); // back plate / frame
+const matLightMetal= new THREE.MeshStandardMaterial({ color: 0x2b2d30, metalness: 0.85, roughness: 0.38 }); // charcoal back plate / frame
 
 /* ---------------- Pole and clamp rings ---------------- */
 const POLE_H = 8.6, POLE_R = 0.13, BOARD_D = 0.07, FRAME_W = 0.09, FRAME_D = 0.05;
@@ -225,39 +225,32 @@ function normalizeUVs(geo) {
 }
 
 /* ---------------- Generated placeholder textures ---------------- */
-// Multiply a hex color by a factor (used to deepen the placeholder gradients)
-function shadeHex(hex, f) {
-  var n = parseInt(hex.slice(1), 16);
-  var r = Math.round(((n >> 16) & 255) * f);
-  var g = Math.round(((n >> 8) & 255) * f);
-  var b = Math.round((n & 255) * f);
-  return 'rgb(' + r + ',' + g + ',' + b + ')';
-}
 function textureAspect(def) {
   if (def.shape === 'circle' || def.shape === 'square') return 1;
   if (def.shape === 'triangle') return Math.sqrt(3) / 2;
   return def.h / def.w;
 }
+// Charcoal placeholder face with light text, matching the charcoal boards
 function makePlaceholderTexture(def, index) {
   const W = 640, H = Math.round(W * textureAspect(def));
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
   const g = ctx.createLinearGradient(0, 0, W, H);
-  g.addColorStop(0, shadeHex(def.colorA, 0.9));
-  g.addColorStop(1, shadeHex(def.colorB, 0.9));
+  g.addColorStop(0, '#26282b');
+  g.addColorStop(1, '#3d4045');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   // font sizes clamped by canvas height so very flat boards don't overflow
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
   ctx.font = '700 ' + Math.min(Math.round(W * 0.4), Math.round(H * 0.7)) + 'px "Avenir Next", Arial, sans-serif';
   ctx.fillText(String(index + 1).padStart(2, '0'), W / 2, H * 0.46);
-  ctx.fillStyle = 'rgba(35,35,35,0.85)';
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
   ctx.font = '600 ' + Math.min(Math.round(W * 0.055), Math.round(H * 0.18)) + 'px "Avenir Next", Arial, sans-serif';
   ctx.fillText(def.label.split('').join(' '), W / 2, H * 0.8);
-  ctx.fillStyle = 'rgba(35,35,35,0.4)';
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
   ctx.font = '500 ' + Math.min(Math.round(W * 0.03), Math.round(H * 0.12)) + 'px "Avenir Next", Arial, sans-serif';
   ctx.fillText('R E P L A C E   M E', W / 2, H * 0.13);
   const tex = new THREE.CanvasTexture(c);
