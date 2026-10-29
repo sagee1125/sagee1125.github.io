@@ -63,7 +63,7 @@ const SIGN_DEFS = [
   { shape: 'arrow',    y: -0.10, angle: 148, arm: 0.24, w: 2.55, h: 0.80, label: 'PROJECTS', colorA: '#9fd0b8', colorB: '#e2f4ea', image: null },
   { shape: 'arrow',    y:  2.35, angle: 208, arm: 0.40, w: 2.30, h: 0.80, label: 'BLOG',     colorA: '#e8a8a8', colorB: '#fae6e6', image: null },
   { shape: 'arrow',    y: -1.35, angle: 258, arm: 0.30, w: 2.70, h: 0.80, label: 'GALLERY',  colorA: '#c3b2e0', colorB: '#ece5f8', image: null },
-  { shape: 'hrect',    y:  0.70, angle: 326, arm: 0.00, w: 4.80, h: 2.20, centered: true, label: '2026', colorA: '#a0cfd8', colorB: '#e0f2f6', image: null },
+  { shape: 'hrect',    y:  0.70, angle: 326, arm: 0.00, w: 4.80, h: 1.10, centered: true, label: '2026', colorA: '#a0cfd8', colorB: '#e0f2f6', image: null },
   { shape: 'arrow',    y: -0.65, angle: 352, arm: 0.32, w: 2.45, h: 0.80, label: 'CONTACT',  colorA: '#d8c8a8', colorB: '#f5eddd', image: null },
 ];
 
@@ -241,14 +241,15 @@ function makePlaceholderTexture(def, index) {
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  // font sizes clamped by canvas height so very flat boards don't overflow
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.font = '700 ' + Math.round(W * 0.4) + 'px "Avenir Next", Arial, sans-serif';
+  ctx.font = '700 ' + Math.min(Math.round(W * 0.4), Math.round(H * 0.7)) + 'px "Avenir Next", Arial, sans-serif';
   ctx.fillText(String(index + 1).padStart(2, '0'), W / 2, H * 0.46);
   ctx.fillStyle = 'rgba(35,35,35,0.85)';
-  ctx.font = '600 ' + Math.round(W * 0.055) + 'px "Avenir Next", Arial, sans-serif';
+  ctx.font = '600 ' + Math.min(Math.round(W * 0.055), Math.round(H * 0.18)) + 'px "Avenir Next", Arial, sans-serif';
   ctx.fillText(def.label.split('').join(' '), W / 2, H * 0.8);
   ctx.fillStyle = 'rgba(35,35,35,0.4)';
-  ctx.font = '500 ' + Math.round(W * 0.03) + 'px "Avenir Next", Arial, sans-serif';
+  ctx.font = '500 ' + Math.min(Math.round(W * 0.03), Math.round(H * 0.12)) + 'px "Avenir Next", Arial, sans-serif';
   ctx.fillText('R E P L A C E   M E', W / 2, H * 0.13);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
