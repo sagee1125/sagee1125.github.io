@@ -58,8 +58,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 const SITE = { name: 'SAGE', sub: 'PERSONAL SITE' };
 
 const SIGN_DEFS = [
-  { shape: 'arrow',    y:  1.25, angle:  40, arm: 0.28, w: 2.90, h: 0.80, label: 'ABOUT',    colorA: '#a8c8e8', colorB: '#e3eefb', image: null },
-  { shape: 'circle',   y:  3.30, angle:  93, arm: 0.35, w: 1.90, h: 1.90, label: 'WORKS',    colorA: '#f2c9a0', colorB: '#fbeadb', image: null },
+  { shape: 'arrow',    y:  1.25, angle:  30, arm: 0.28, w: 2.90, h: 0.80, label: 'ABOUT',    colorA: '#a8c8e8', colorB: '#e3eefb', image: null },
+  { shape: 'circle',   y:  3.30, angle:  93, arm: 0.00, w: 1.90, h: 1.90, centered: true, label: 'WORKS', colorA: '#f2c9a0', colorB: '#fbeadb', image: null },
   { shape: 'arrow',    y: -0.10, angle: 148, arm: 0.24, w: 2.55, h: 0.80, label: 'PROJECTS', colorA: '#9fd0b8', colorB: '#e2f4ea', image: null },
   { shape: 'arrow',    y:  2.35, angle: 208, arm: 0.40, w: 2.30, h: 0.80, label: 'BLOG',     colorA: '#e8a8a8', colorB: '#fae6e6', image: null },
   { shape: 'arrow',    y: -1.35, angle: 258, arm: 0.30, w: 2.70, h: 0.80, label: 'GALLERY',  colorA: '#c3b2e0', colorB: '#ece5f8', image: null },
@@ -403,10 +403,10 @@ function focusDistance(def) {
 }
 
 /* Intro: dolly the camera in */
-camera.position.copy(sphericalPos(0.52, 15.5));
+camera.position.copy(sphericalPos(0.349, 15.5));
 camera.lookAt(TARGET0);
 animate(1400, (e) => {
-  camera.position.lerpVectors(sphericalPos(0.52, 15.5), sphericalPos(0.52, 11.5), e);
+  camera.position.lerpVectors(sphericalPos(0.349, 15.5), sphericalPos(0.349, 11.5), e);
   camera.lookAt(TARGET0);
 }, () => {
   mode = 'overview';
@@ -471,7 +471,7 @@ function focusSign(i) {
 /* Exit focus: restore the view saved before focusing */
 function unfocus() {
   if (mode !== 'focus') return;
-  const v = savedView || { az: 0.52, dist: 11.5 };
+  const v = savedView || { az: 0.349, dist: 11.5 };
   const endPos = sphericalPos(v.az, v.dist);
   const startPos = camera.position.clone();
   const startTgt = controls.target.clone();
