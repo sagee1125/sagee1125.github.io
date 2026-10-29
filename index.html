@@ -63,7 +63,7 @@ const SIGN_DEFS = [
   { shape: 'arrow',    y: -0.10, angle: 148, arm: 0.24, w: 2.55, h: 0.80, label: 'PROJECTS', colorA: '#9fd0b8', colorB: '#e2f4ea', image: null },
   { shape: 'arrow',    y:  2.35, angle: 208, arm: 0.40, w: 2.30, h: 0.80, label: 'BLOG',     colorA: '#e8a8a8', colorB: '#fae6e6', image: null },
   { shape: 'arrow',    y: -1.35, angle: 258, arm: 0.30, w: 2.70, h: 0.80, label: 'GALLERY',  colorA: '#c3b2e0', colorB: '#ece5f8', image: null },
-  { shape: 'arrow',    y:  0.95, angle: 326, arm: 0.26, w: 1.80, h: 0.80, label: '2026',     colorA: '#a0cfd8', colorB: '#e0f2f6', image: null },
+  { shape: 'hrect',    y:  0.95, angle: 326, arm: 0.00, w: 1.80, h: 0.80, centered: true, label: '2026', colorA: '#a0cfd8', colorB: '#e0f2f6', image: null },
   { shape: 'arrow',    y: -0.65, angle: 352, arm: 0.32, w: 2.45, h: 0.80, label: 'CONTACT',  colorA: '#d8c8a8', colorB: '#f5eddd', image: null },
 ];
 
@@ -268,17 +268,34 @@ SIGN_DEFS.forEach((def, i) => {
   pivot.position.y = def.y;
   root.add(pivot);
 
-  // Horizontal rod lying IN the board's plane: from the pole out to the board's inner edge
+  // Horizontal rod lying IN the board's plane: from the pole out to the board's inner edge.
+  // Centered boards (def.centered) sit straight on the pole instead, held by two studs.
   const zOff = POLE_R + 0.02;                    // board back plane sits just outside the pole
+  const centered = !!def.centered;
   const innerX = POLE_R + def.arm;               // board inner edge
-  const rodLen = def.arm + 0.10;                 // embeds into the pole and the board edge
-  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, rodLen, 16), matBlack);
-  rod.rotation.z = Math.PI / 2;
-  rod.position.set((POLE_R - 0.06 + innerX + 0.04) / 2, 0, zOff + BOARD_D / 2);
-  pivot.add(rod);
+  const groupX = centered ? 0 : innerX + def.w / 2;
+
+  const mountMeshes = [];
+  if (centered) {
+    const studGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.12, 12);
+    [-1, 1].forEach((s) => {
+      const stud = new THREE.Mesh(studGeo, matBlack);
+      stud.rotation.x = Math.PI / 2;
+      stud.position.set(s * 0.1, 0, POLE_R + 0.01);
+      pivot.add(stud);
+      mountMeshes.push(stud);
+    });
+  } else {
+    const rodLen = def.arm + 0.10;               // embeds into the pole and the board edge
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, rodLen, 16), matBlack);
+    rod.rotation.z = Math.PI / 2;
+    rod.position.set((POLE_R - 0.06 + innerX + 0.04) / 2, 0, zOff + BOARD_D / 2);
+    pivot.add(rod);
+    mountMeshes.push(rod);
+  }
 
   const group = new THREE.Group();               // board space: +z faces outward
-  group.position.set(innerX + def.w / 2, 0, zOff);
+  group.position.set(groupX, 0, zOff);
   pivot.add(group);
 
   // Board body (thin, the back face doubles as the light-gray metal back plate)
@@ -324,7 +341,7 @@ SIGN_DEFS.forEach((def, i) => {
   ring.position.y = def.y;
   root.add(ring);
 
-  [body, front, frame, rod].forEach((m) => {
+  [body, front, frame, ...mountMeshes].forEach((m) => {
     m.userData.signIndex = i;
     pickMeshes.push(m);
   });
@@ -417,8 +434,9 @@ function focusSign(i) {
   const shift = def.w * 0.55 + 1.2;
   const P1 = new THREE.Vector3(-Math.cos(camAz) * shift, 0, Math.sin(camAz) * shift);
 
-  // Board center in root coordinates (board hangs off the pole's side, rod in its plane)
-  const cxL = POLE_R + def.arm + def.w / 2;
+  // Board center in root coordinates (side-mounted boards hang off the pole;
+  // centered boards sit straight on it)
+  const cxL = def.centered ? 0 : POLE_R + def.arm + def.w / 2;
   const czL = POLE_R + 0.02 + BOARD_D / 2;
   const anchorRoot = new THREE.Vector3(
     cxL * Math.cos(a) + czL * Math.sin(a),
