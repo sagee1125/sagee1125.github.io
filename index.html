@@ -226,7 +226,7 @@ rodTex.colorSpace = THREE.SRGBColorSpace;
 rodTex.anisotropy = 4;
 const matConcrete    = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0, map: poleTex }); // pole body / cap
 const matConcreteRod = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0, map: rodTex });  // mounting necks
-const matDarkMetal = new THREE.MeshStandardMaterial({ color: 0x3b3e44, metalness: 0.85, roughness: 0.35 }); // clamp rings
+const matDarkMetal = new THREE.MeshStandardMaterial({ color: 0x7d8084, metalness: 0.7,  roughness: 0.4  }); // clamp rings (metallic gray, not black)
 const matLightMetal= new THREE.MeshStandardMaterial({ color: 0xbfc2c6, metalness: 0.9,  roughness: 0.3  }); // back plate / frame
 const matWire      = new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.6, metalness: 0.2 }); // overhead wires
 
