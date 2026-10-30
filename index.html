@@ -88,7 +88,8 @@ const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 10
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0xe9e9e9, 0.5));
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xe9e9e9, 0.5);
+scene.add(hemiLight);
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
 dirLight.position.set(4, 7, 5);
 scene.add(dirLight);
@@ -155,9 +156,12 @@ function applySkyPhase() {
   sky.visible = fade > 0.005 && skyFadePatched;
   if (skyFadePatched) skyU['u_skyFade'].value = fade;
   renderer.toneMappingExposure = lerpNum(1.0, 0.45, fade);
+  dirLight.intensity = lerpNum(1.5, 0.95, fade);
+  hemiLight.intensity = lerpNum(0.5, 0.32, fade);
 
   // cloud shader sun glow only while the gradient backdrop is showing
   cloudMat.uniforms.u_dayMix.value = 1 - fade;
+  return fade;
 }
 
 /* Cloud layer: a large transparent plane carrying the drifting-cloud shader,
@@ -229,6 +233,29 @@ const matConcreteRod = new THREE.MeshStandardMaterial({ color: 0xffffff, roughne
 const matDarkMetal = new THREE.MeshStandardMaterial({ color: 0x7d8084, metalness: 0.7,  roughness: 0.4  }); // clamp rings (metallic gray, not black)
 const matLightMetal= new THREE.MeshStandardMaterial({ color: 0xbfc2c6, metalness: 0.9,  roughness: 0.3  }); // back plate / frame
 const matWire      = new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.6, metalness: 0.2 }); // overhead wires
+
+/* ---------------- Marquee neon (visible only at dawn/dusk) ---------------- */
+const bulbGeo = new THREE.SphereGeometry(0.042, 8, 6);
+const NEON_TINTS = ['#ffb24d', '#ffc878', '#ffd79a', '#ffe2b0'];
+const bulbBase = NEON_TINTS.map(c => new THREE.Color(c));
+const bulbMats = bulbBase.map(c => new THREE.MeshBasicMaterial({ color: c.clone() }));
+// shared radial-gradient glow sprite texture
+const glowTexCanvas = (() => {
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 2, 64, 64, 62);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+})();
+const glowMats = NEON_TINTS.map(c => new THREE.SpriteMaterial({
+  map: glowTexCanvas, color: c, transparent: true, opacity: 0,
+  blending: THREE.AdditiveBlending, depthWrite: false
+}));
 
 /* ---------------- Pole and clamp rings ---------------- */
 const POLE_H = 8.6, POLE_R = 0.13, BOARD_D = 0.07, FRAME_W = 0.09, FRAME_D = 0.05;
@@ -396,6 +423,8 @@ function makePlaceholderTexture(def, index) {
 
 /* ---------------- Assemble the signs ---------------- */
 const signs = [];        // { pivot, group, anchor, def }
+const signFaces = [];    // front materials, emissive driven by the sky fade
+const neonGroups = [];   // marquee bulb groups, visibility driven by the sky fade
 const pickMeshes = [];   // meshes participating in ray picking
 
 SIGN_DEFS.forEach((def, i) => {
@@ -451,6 +480,8 @@ SIGN_DEFS.forEach((def, i) => {
     roughness: 0.85,
     metalness: 0.0,
     envMapIntensity: 0.3,
+    emissive: new THREE.Color(0xffd9a0),
+    emissiveIntensity: 0
   });
   if (def.image) {
     new THREE.TextureLoader().load(def.image, (t) => {
@@ -468,6 +499,30 @@ SIGN_DEFS.forEach((def, i) => {
   const frame = new THREE.Mesh(makeFrameGeometry(def, outline), matLightMetal);
   frame.position.z = BOARD_D + 0.03 - FRAME_D;
   group.add(frame);
+
+  // marquee bulbs along the board's inner edge (inset ~0.08), never pickable
+  const neon = new THREE.Group();
+  neon.visible = false;
+  group.add(neon);
+  const outlinePts = outline.getPoints(48);
+  let per = 0;
+  for (let i = 0; i < outlinePts.length; i++) {
+    per += outlinePts[i].distanceTo(outlinePts[(i + 1) % outlinePts.length]);
+  }
+  const nBulbs = THREE.MathUtils.clamp(Math.round(per / 0.25), 10, 40);
+  const tier = i % bulbMats.length;
+  outline.getSpacedPoints(nBulbs).forEach((pt) => {
+    const inset = pt.clone().multiplyScalar(1 - 0.08 / Math.max(pt.length(), 0.001));
+    const bulb = new THREE.Mesh(bulbGeo, bulbMats[tier]);
+    bulb.position.set(inset.x, inset.y, BOARD_D + 0.035);
+    neon.add(bulb);
+    const sp = new THREE.Sprite(glowMats[tier]);
+    sp.scale.set(0.3, 0.3, 1);
+    sp.position.set(inset.x, inset.y, BOARD_D + 0.02);
+    neon.add(sp);
+  });
+  neonGroups.push(neon);
+  signFaces.push(frontMat);
 
   // Anchor at the board center: target of the focus animation
   const anchor = new THREE.Object3D();
@@ -703,7 +758,15 @@ renderer.setAnimationLoop((now) => {
 
   // time-of-day: dawn → day → dusk
   skyState.t += (skyState.target - skyState.t) * Math.min(1, 0.05);
-  applySkyPhase();
+  const fade = applySkyPhase();
+  const breathe = 0.5 + 0.5 * Math.sin(now / 1000 * 1.6);
+  const neonK = fade * (0.7 + 0.3 * breathe);
+  neonGroups.forEach((g) => { g.visible = neonK > 0.01; });
+  bulbMats.forEach((m, k) => {
+    m.color.copy(bulbBase[k]).multiplyScalar(0.55 + 0.45 * neonK);
+  });
+  glowMats.forEach((m) => { m.opacity = 0.85 * neonK; });
+  signFaces.forEach((m) => { m.emissiveIntensity = 0.25 * fade; });
 
   // the cloud quad is fullscreen in clip space; its NDC depth (0.5) sits
   // naturally behind the signpost and in front of the sky dome
