@@ -41,7 +41,6 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /* ==========================================================
    Editable configuration
@@ -227,7 +226,7 @@ rodTex.colorSpace = THREE.SRGBColorSpace;
 rodTex.anisotropy = 4;
 const matConcrete    = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0, map: poleTex }); // pole body / cap
 const matConcreteRod = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0, map: rodTex });  // mounting necks
-const matDarkMetal = new THREE.MeshStandardMaterial({ color: 0x3b3e44, metalness: 0.85, roughness: 0.35 }); // clamp rings / crossarms / insulators
+const matDarkMetal = new THREE.MeshStandardMaterial({ color: 0x3b3e44, metalness: 0.85, roughness: 0.35 }); // clamp rings
 const matLightMetal= new THREE.MeshStandardMaterial({ color: 0xbfc2c6, metalness: 0.9,  roughness: 0.3  }); // back plate / frame
 const matWire      = new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.6, metalness: 0.2 }); // overhead wires
 
@@ -244,60 +243,6 @@ const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, POLE_H, 28), 
 root.add(pole);
 const cap = new THREE.Mesh(new THREE.SphereGeometry(0.12, 28, 18), matConcrete);
 
-/* ---------------- Overhead wires (electric-pole top) ---------------- */
-// short spigot above the cap carries two perpendicular crossarms; each end
-// holds an insulator stack from which a sagging wire spans out of view
-const spigot = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.55, 10), matDarkMetal);
-spigot.position.y = 4.5;
-root.add(spigot);
-
-const armA = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 3.3, 8), matDarkMetal);
-armA.geometry.rotateZ(Math.PI / 2);
-armA.position.y = 4.48;
-root.add(armA);
-const armB = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 3.3, 8), matDarkMetal);
-armB.geometry.rotateX(Math.PI / 2);
-armB.position.y = 4.64;
-root.add(armB);
-
-// insulator: three stacked discs merged into one geometry
-function insulatorGeometry() {
-  const parts = [
-    new THREE.CylinderGeometry(0.052, 0.065, 0.05, 8),
-    new THREE.CylinderGeometry(0.038, 0.05, 0.05, 8),
-    new THREE.CylinderGeometry(0.026, 0.036, 0.06, 8)
-  ];
-  parts[1].translate(0, 0.05, 0);
-  parts[2].translate(0, 0.10, 0);
-  return mergeGeometries(parts);
-}
-const insulatorSpots = [];
-[-1, 1].forEach((sx) => [-1, 1].forEach((sz) => {
-  insulatorSpots.push([sx * 1.45, 4.496, sz * 0.09]);   // ends of crossarm A
-  insulatorSpots.push([sx * 0.09, 4.656, sz * 1.45]);   // ends of crossarm B
-}));
-const insParts = insulatorSpots.map(([x, y, z]) => {
-  const g = insulatorGeometry();
-  g.translate(x, y, z);
-  return g;
-});
-root.add(new THREE.Mesh(mergeGeometries(insParts), matDarkMetal));
-
-// wires: two per direction, sagging from the insulator stacks out of view
-const wireGeos = [];
-[-0.09, 0.09].forEach((zOff) => {
-  wireGeos.push(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(
-    new THREE.Vector3(-40, 4.656, zOff),
-    new THREE.Vector3(0, 4.106, zOff),
-    new THREE.Vector3(40, 4.656, zOff)), 48, 0.016, 6, false));
-});
-[-0.09, 0.09].forEach((xOff) => {
-  wireGeos.push(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(
-    new THREE.Vector3(xOff, 4.816, -40),
-    new THREE.Vector3(xOff, 4.316, 0),
-    new THREE.Vector3(xOff, 4.816, 40)), 48, 0.016, 6, false));
-});
-root.add(new THREE.Mesh(mergeGeometries(wireGeos), matWire));
 cap.scale.y = 0.5;
 cap.position.y = POLE_H / 2;
 root.add(cap);
