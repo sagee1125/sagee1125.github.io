@@ -7,7 +7,7 @@
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #ffffff; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: linear-gradient(180deg, #5a97d8 0%, #cbe3f7 100%) fixed; }
   body { font-family: "Avenir Next", "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
   #app { position: fixed; inset: 0; }
   #app canvas { display: block; }
@@ -35,12 +35,12 @@
   <div id="site-name"><div class="name">SAGE</div><div class="sub">PERSONAL SITE</div></div>
 </div>
 <div id="loading">LOADING</div>
-<script src="sky.js"></script>
 
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { Sky } from 'three/addons/objects/Sky.js';
 
 /* ==========================================================
    Editable configuration
@@ -97,6 +97,145 @@ const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
 fillLight.position.set(0, 0, 1);
 camera.add(fillLight);
 scene.add(camera);
+
+/* ---------------- Time-of-day sky (dawn / day / dusk / night) ---------------- */
+// The wheel drives skyState.t (0 dawn · 1 day · 2 dusk · 3 night). The day
+// look is the page CSS gradient plus the drifting cloud layer; from
+// dawn into dusk/night a Three.js Sky atmosphere mesh fades in instead.
+const sky = new Sky();
+sky.scale.setScalar(60);
+let skyFadePatched = false;
+{
+  const m = sky.material;
+  const patched = m.fragmentShader.replace(
+    /gl_FragColor\s*=\s*vec4\(\s*(\w+)\s*,\s*1\.0\s*\)\s*;/,
+    (match, name) => 'gl_FragColor = vec4(mix(' + name + ', vec3(0.015, 0.03, 0.09), u_nightBlue), u_skyFade);'
+  );
+  if (patched !== m.fragmentShader) {
+    m.fragmentShader = 'uniform float u_skyFade;\nuniform float u_nightBlue;\n' + patched;
+    m.uniforms.u_skyFade = { value: 0 };   // registered so applySkyPhase can drive them
+    m.uniforms.u_nightBlue = { value: 0 };
+    m.transparent = true;
+    skyFadePatched = true;
+  }
+}
+sky.visible = false;
+scene.add(sky);
+const skyU = sky.material.uniforms;
+
+function smoothstepJS(a, b, x) {
+  const k = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
+  return k * k * (3 - 2 * k);
+}
+function lerpNum(a, b, k) { return a + (b - a) * k; }
+
+// atmospheric parameter sets per the reference look
+const SKY_DAWN = { t: 12, r: 3, m: 0.005, g: 0.7, elev: 5, az: 160 };
+const SKY_DUSK = { t: 14, r: 3, m: 0.005, g: 0.85, elev: 3, az: 180 };   // sun just above the horizon
+const SKY_NIGHT = { t: 1, r: 0.8, m: 0.001, g: 0.6, elev: -30, az: 200 };
+const skyState = { t: 1, target: 1 };          // start at mid-day
+window.__SKY_STATE__ = skyState;               // console access: set .t/.target (0 dawn · 1 day · 2 dusk · 3 night)
+window.__errs = [];
+addEventListener('error', (e) => { window.__errs.push(e.message + ' @ ' + e.lineno); });
+addEventListener('unhandledrejection', (e) => { window.__errs.push(String(e.reason)); });
+
+function applySkyPhase() {
+  const T = skyState.t;
+  const k1 = THREE.MathUtils.clamp((T - 0.25) / 1.5, 0, 1);
+  const k2 = THREE.MathUtils.clamp((T - 1.75) / 1.0, 0, 1);
+  const p = {
+    t: lerpNum(lerpNum(SKY_DAWN.t, SKY_DUSK.t, k1), SKY_NIGHT.t, k2),
+    r: lerpNum(lerpNum(SKY_DAWN.r, SKY_DUSK.r, k1), SKY_NIGHT.r, k2),
+    m: lerpNum(lerpNum(SKY_DAWN.m, SKY_DUSK.m, k1), SKY_NIGHT.m, k2),
+    g: lerpNum(lerpNum(SKY_DAWN.g, SKY_DUSK.g, k1), SKY_NIGHT.g, k2),
+    elev: lerpNum(lerpNum(SKY_DAWN.elev, SKY_DUSK.elev, k1), SKY_NIGHT.elev, k2)
+  };
+  skyU['turbidity'].value = p.t;
+  skyU['rayleigh'].value = p.r;
+  skyU['mieCoefficient'].value = p.m;
+  skyU['mieDirectionalG'].value = p.g;
+  skyU['sunPosition'].value.setFromSphericalCoords(
+    1, THREE.MathUtils.degToRad(90 - p.elev), THREE.MathUtils.degToRad(200));
+  const fade = Math.max(
+    1 - smoothstepJS(0.25, 0.60, T),   // dawn dissolves into the day gradient
+    smoothstepJS(1.40, 1.75, T)        // dusk/night fades in
+  );
+  sky.visible = fade > 0.005 && skyFadePatched;
+  if (skyFadePatched) {
+    skyU['u_skyFade'].value = fade;
+    skyU['u_nightBlue'].value = smoothstepJS(2.3, 2.9, T);   // deep-blue night sky
+  }
+  renderer.toneMappingExposure = lerpNum(1.0, 0.45, fade);
+
+  // cloud shader follows the same phase blending (clouds themselves never change)
+  cloudMat.uniforms.u_dayMix.value = smoothstepJS(0.55, 0.9, T) * (1 - smoothstepJS(1.3, 1.7, T));
+  const c1 = new THREE.Color(0.85, 0.55, 0.45).lerp(new THREE.Color(0.42, 0.62, 0.85), k1);
+  c1.lerp(new THREE.Color(0.34, 0.26, 0.34), THREE.MathUtils.clamp(T - 1, 0, 1));
+  c1.lerp(new THREE.Color(0.05, 0.06, 0.12), k2);
+  cloudMat.uniforms.u_sky.value.copy(c1);
+}
+
+// stars (two brightness layers) and the moon, occluded by the signpost
+function makeStars(count, size) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const v = new THREE.Vector3().setFromSphericalCoords(
+      40,
+      Math.acos(THREE.MathUtils.randFloatSpread(1.15)),
+      THREE.MathUtils.randFloat(0, Math.PI * 2)
+    );
+    pos.set([v.x, v.y, v.z], i * 3);
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xcfdcff, size, sizeAttenuation: true, transparent: true, opacity: 0,
+    depthWrite: false, blending: THREE.AdditiveBlending
+  });
+  scene.add(new THREE.Points(geo, mat));
+  return mat;
+}
+const starMats = [makeStars(700, 0.28), makeStars(180, 0.55)];
+const moonMat = new THREE.MeshBasicMaterial({ color: 0xe8eef8, transparent: true, opacity: 0, depthWrite: false });
+const moon = new THREE.Mesh(new THREE.CircleGeometry(1.1, 40), moonMat);
+moon.position.setFromSphericalCoords(40, THREE.MathUtils.degToRad(14), THREE.MathUtils.degToRad(222));
+moon.lookAt(0, 0, 0);
+scene.add(moon);
+const moonGlowMat = new THREE.MeshBasicMaterial({
+  color: 0xbfd0ee, transparent: true, opacity: 0, depthWrite: false,
+  blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+});
+const moonGlow = new THREE.Mesh(new THREE.CircleGeometry(2.6, 40), moonGlowMat);
+moonGlow.position.copy(moon.position);
+moonGlow.lookAt(0, 0, 0);
+moon.renderOrder = 4;
+moonGlow.renderOrder = 4;
+scene.add(moonGlow);
+
+/* Cloud layer: a large transparent plane carrying the drifting-cloud shader,
+ * parked between the signpost (in front of it) and the sky dome (behind it). */
+const CLOUD_VERT = 'varying vec2 v_uv;\nvoid main() {\n  v_uv = uv;\n  gl_Position = vec4(position.xy, 0.99, 1.0);   // NDC z 0.99: behind the signs, in front of the sky dome\n}\n';
+const CLOUD_FRAG = '\nprecision highp float;\n\nvarying vec2 v_uv;\n\nuniform vec2 u_res;\nuniform float u_time;\nuniform float u_count;\nuniform vec3 u_cloud;\nuniform vec3 u_sky;\nuniform float u_dayMix;\n\nconst mat2 R = mat2(0.80, 0.60, -0.60, 0.80);\n\nfloat hash(vec2 p) {\n  return fract(sin(dot(p, vec2(41.31, 289.17))) * 26737.367);\n}\n\nfloat vnoise(vec2 p) {\n  vec2 i = floor(p);\n  vec2 f = fract(p);\n  f = f * f * (3.0 - 2.0 * f);\n  float a = hash(i);\n  float b = hash(i + vec2(1.0, 0.0));\n  float c = hash(i + vec2(0.0, 1.0));\n  float d = hash(i + vec2(1.0, 1.0));\n  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);\n}\n\nfloat fbm(vec2 p) {\n  float sum = 0.0;\n  float amp = 0.5;\n  for (int i = 0; i < 4; i++) {\n    sum += amp * vnoise(p);\n    p = R * p * 2.03 + 19.19;\n    amp *= 0.5;\n  }\n  return sum;\n}\n\nfloat billow(vec2 p) {\n  float sum = 0.0;\n  float amp = 0.5;\n  for (int i = 0; i < 5; i++) {\n    sum += amp * (1.0 - abs(2.0 * vnoise(p) - 1.0));\n    p = R * p * 2.11 + 13.37;\n    amp *= 0.5;\n  }\n  return sum;\n}\n\nfloat cloudDensity(vec2 p, vec2 c, vec2 r, float seed, float t) {\n  vec2 q = p - c;\n  float ry = q.y > 0.0 ? r.y : r.y * 0.42;\n  float env = 1.0 - length(vec2(q.x / r.x, q.y / ry));\n  if (env < -0.35) return 0.0;\n  vec2 dp = q * (2.4 / r.x) + seed;\n  dp += 0.6 * vec2(\n    fbm(dp * 1.4 + t * 0.04),\n    fbm(dp * 1.4 + 7.7 - t * 0.03)\n  );\n  float detail = billow(dp * 1.6);\n  return env + (detail - 0.62) * 0.62;\n}\n\nvoid cloudPass(inout vec4 acc, vec2 p, float aspect, float t,\n               float spd, float phase, float y, vec2 r, float seed, float dist) {\n  float cx = mix(-r.x - 0.25, aspect + r.x + 0.25, fract(t * spd + phase));\n  float cy = y + sin(t * 0.05 + phase * 6.2831) * 0.012;\n  float d = cloudDensity(p, vec2(cx, cy), r, seed, t);\n  if (d < 0.02) return;\n  float dUp = cloudDensity(p + vec2(0.0, r.y * 0.55), vec2(cx, cy), r, seed, t);\n  float occl = clamp((dUp - d) * 1.1 + d * 0.55, 0.0, 1.0);\n  vec3 lit = u_cloud * 1.04;\n  vec3 shadow = mix(u_cloud * 0.60, u_sky, 0.38);\n  vec3 cloudCol = mix(lit, shadow, occl * 0.85);\n  float a = smoothstep(0.02, 0.38, d);\n  float rim = smoothstep(0.02, 0.14, d) * (1.0 - smoothstep(0.14, 0.40, d));\n  cloudCol += rim * 0.10;\n  cloudCol = mix(cloudCol, u_sky, dist * 0.35);\n  a *= mix(1.0, 0.8, dist);\n  acc.rgb = mix(acc.rgb, cloudCol, a);\n  acc.a = a + acc.a * (1.0 - a);\n}\n\nvoid main() {\n  float aspect = u_res.x / u_res.y;\n  vec2 p = vec2(v_uv.x * aspect, v_uv.y);\n  float t = u_time;\n  vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);\n\n  // soft sun glow, day only\n  if (u_dayMix > 0.001) {\n    vec2 sunPos = vec2(aspect * 0.78, 0.92);\n    float sunDist = length(p - sunPos);\n    float glow = exp(-sunDist * sunDist * 5.0) * 0.16 * u_dayMix;\n    acc.rgb += vec3(1.0, 0.95, 0.82) * glow;\n    acc.a = max(acc.a, glow);\n  }\n\n  // drifting clouds, every time of day (never changes with the phases)\n  if (u_count > 5.5) cloudPass(acc, p, aspect, t, 0.006, 0.10, 0.84, vec2(0.20, 0.10), 43.7, 1.0);\n  if (u_count > 4.5) cloudPass(acc, p, aspect, t, 0.008, 0.62, 0.73, vec2(0.24, 0.12), 71.3, 0.85);\n  if (u_count > 3.5) cloudPass(acc, p, aspect, t, 0.011, 0.33, 0.60, vec2(0.34, 0.16), 17.3, 0.55);\n  if (u_count > 2.5) cloudPass(acc, p, aspect, t, 0.013, 0.80, 0.47, vec2(0.30, 0.15), 29.9, 0.45);\n  if (u_count > 1.5) cloudPass(acc, p, aspect, t, 0.016, 0.05, 0.35, vec2(0.46, 0.20), 91.1, 0.15);\n  cloudPass(acc, p, aspect, t, 0.020, 0.48, 0.20, vec2(0.56, 0.24), 57.2, 0.0);\n\n  gl_FragColor = acc;\n}\n';
+const cloudMat = new THREE.ShaderMaterial({
+  vertexShader: CLOUD_VERT,
+  fragmentShader: CLOUD_FRAG,
+  transparent: true,
+  depthWrite: false,
+  depthTest: true,
+  premultipliedAlpha: true,      // the shader writes premultiplied cloud color
+  uniforms: {
+    u_res: { value: new THREE.Vector2(innerWidth, innerHeight) },
+    u_time: { value: 0 },
+    u_count: { value: 6 },
+    u_cloud: { value: new THREE.Color('#fbf8f2') },
+    u_sky: { value: new THREE.Color(0.42, 0.62, 0.85) },
+    u_dayMix: { value: 1 }
+  }
+});
+const cloudQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), cloudMat);   // 2x2 = fullscreen in clip space
+cloudQuad.renderOrder = 5;
+cloudQuad.frustumCulled = false;
+scene.add(cloudQuad);
 
 /* ---------------- Materials ---------------- */
 const matBlack     = new THREE.MeshStandardMaterial({ color: 0x151515, metalness: 0.4,  roughness: 0.55 }); // pole / arms
@@ -385,6 +524,7 @@ controls.minPolarAngle = Math.PI / 2;   // vertical angle locked
 controls.maxPolarAngle = Math.PI / 2;
 controls.minDistance = 7;
 controls.maxDistance = 18;
+controls.enableZoom = false;           // the wheel drives the time of day instead
 controls.enabled = false;               // enabled after the intro
 
 /* ---------------- State machine and tweens ---------------- */
@@ -560,10 +700,29 @@ canvas.addEventListener('pointerup', (e) => {
 canvas.addEventListener('pointercancel', () => { downId = -1; });
 addEventListener('keydown', (e) => { if (e.key === 'Escape') unfocus(); });
 
+/* ---------------- Wheel: dawn → day → dusk → night ---------------- */
+addEventListener('wheel', (e) => {
+  skyState.target = THREE.MathUtils.clamp(
+    skyState.target + THREE.MathUtils.clamp(e.deltaY, -180, 180) * 0.0016, 0, 3);
+}, { passive: true });
+
 /* ---------------- Main loop ---------------- */
 renderer.setAnimationLoop((now) => {
   stepAnims(now);
   if (mode === 'overview') controls.update();   // camera is tween-driven otherwise
+
+  // time-of-day: dawn → day → dusk → night
+  skyState.t += (skyState.target - skyState.t) * Math.min(1, 0.05);
+  applySkyPhase();
+  const night = smoothstepJS(2.35, 2.9, skyState.t);
+  starMats.forEach((m) => { m.opacity = night; });
+  moonMat.opacity = night;
+  moonGlowMat.opacity = night * 0.35;
+
+  // the cloud quad is fullscreen in clip space; its NDC depth (0.5) sits
+  // naturally behind the signpost and in front of the sky dome
+  cloudMat.uniforms.u_time.value = now / 1000;
+
   renderer.render(scene, camera);
 });
 document.getElementById('loading').classList.add('done');
@@ -572,6 +731,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  cloudMat.uniforms.u_res.value.set(innerWidth, innerHeight);
 });
 
 // Debug handle (available in the console)
