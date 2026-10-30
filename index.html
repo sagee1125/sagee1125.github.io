@@ -98,10 +98,10 @@ fillLight.position.set(0, 0, 1);
 camera.add(fillLight);
 scene.add(camera);
 
-/* ---------------- Time-of-day sky (dawn / day / dusk / night) ---------------- */
-// The wheel drives skyState.t (0 dawn · 1 day · 2 dusk · 3 night). The day
-// look is the page CSS gradient plus the drifting cloud layer; from
-// dawn into dusk/night a Three.js Sky atmosphere mesh fades in instead.
+/* ---------------- Time-of-day sky (dawn / day / dusk) ---------------- */
+// The wheel drives skyState.t (0 dawn · 1 day · 2 dusk). The day look is the
+// page CSS gradient plus the drifting cloud layer; at dawn and dusk a Three.js
+// Sky atmosphere mesh fades in instead.
 const sky = new Sky();
 sky.scale.setScalar(60);
 let skyFadePatched = false;
@@ -109,12 +109,11 @@ let skyFadePatched = false;
   const m = sky.material;
   const patched = m.fragmentShader.replace(
     /gl_FragColor\s*=\s*vec4\(\s*(\w+)\s*,\s*1\.0\s*\)\s*;/,
-    (match, name) => 'gl_FragColor = vec4(mix(' + name + ', vec3(0.015, 0.03, 0.09), u_nightBlue), u_skyFade);'
+    (match, name) => 'gl_FragColor = vec4(' + name + ', u_skyFade);'
   );
   if (patched !== m.fragmentShader) {
-    m.fragmentShader = 'uniform float u_skyFade;\nuniform float u_nightBlue;\n' + patched;
-    m.uniforms.u_skyFade = { value: 0 };   // registered so applySkyPhase can drive them
-    m.uniforms.u_nightBlue = { value: 0 };
+    m.fragmentShader = 'uniform float u_skyFade;\n' + patched;
+    m.uniforms.u_skyFade = { value: 0 };   // registered so applySkyPhase can drive it
     m.transparent = true;
     skyFadePatched = true;
   }
@@ -132,85 +131,34 @@ function lerpNum(a, b, k) { return a + (b - a) * k; }
 // atmospheric parameter sets per the reference look
 const SKY_DAWN = { t: 12, r: 3, m: 0.005, g: 0.7, elev: 5, az: 160 };
 const SKY_DUSK = { t: 14, r: 3, m: 0.005, g: 0.85, elev: 3, az: 180 };   // sun just above the horizon
-const SKY_NIGHT = { t: 1, r: 0.8, m: 0.001, g: 0.6, elev: -30, az: 200 };
 const skyState = { t: 1, target: 1 };          // start at mid-day
-window.__SKY_STATE__ = skyState;               // console access: set .t/.target (0 dawn · 1 day · 2 dusk · 3 night)
+window.__SKY_STATE__ = skyState;               // console access: set .t/.target (0 dawn · 1 day · 2 dusk)
 window.__errs = [];
 addEventListener('error', (e) => { window.__errs.push(e.message + ' @ ' + e.lineno); });
 addEventListener('unhandledrejection', (e) => { window.__errs.push(String(e.reason)); });
 
 function applySkyPhase() {
   const T = skyState.t;
-  const k1 = THREE.MathUtils.clamp((T - 0.25) / 1.5, 0, 1);
-  const k2 = THREE.MathUtils.clamp((T - 1.75) / 1.0, 0, 1);
-  const p = {
-    t: lerpNum(lerpNum(SKY_DAWN.t, SKY_DUSK.t, k1), SKY_NIGHT.t, k2),
-    r: lerpNum(lerpNum(SKY_DAWN.r, SKY_DUSK.r, k1), SKY_NIGHT.r, k2),
-    m: lerpNum(lerpNum(SKY_DAWN.m, SKY_DUSK.m, k1), SKY_NIGHT.m, k2),
-    g: lerpNum(lerpNum(SKY_DAWN.g, SKY_DUSK.g, k1), SKY_NIGHT.g, k2),
-    elev: lerpNum(lerpNum(SKY_DAWN.elev, SKY_DUSK.elev, k1), SKY_NIGHT.elev, k2)
-  };
-  skyU['turbidity'].value = p.t;
-  skyU['rayleigh'].value = p.r;
-  skyU['mieCoefficient'].value = p.m;
-  skyU['mieDirectionalG'].value = p.g;
+  const k = THREE.MathUtils.clamp((T - 0.35) / 1.3, 0, 1);   // dawn → dusk morph
+  skyU['turbidity'].value = lerpNum(SKY_DAWN.t, SKY_DUSK.t, k);
+  skyU['rayleigh'].value = lerpNum(SKY_DAWN.r, SKY_DUSK.r, k);
+  skyU['mieCoefficient'].value = lerpNum(SKY_DAWN.m, SKY_DUSK.m, k);
+  skyU['mieDirectionalG'].value = lerpNum(SKY_DAWN.g, SKY_DUSK.g, k);
   skyU['sunPosition'].value.setFromSphericalCoords(
-    1, THREE.MathUtils.degToRad(90 - p.elev), THREE.MathUtils.degToRad(200));
+    1, THREE.MathUtils.degToRad(90 - lerpNum(SKY_DAWN.elev, SKY_DUSK.elev, k)),
+    THREE.MathUtils.degToRad(lerpNum(SKY_DAWN.az, SKY_DUSK.az, k)));
+  // the atmosphere mesh shows at dawn and dusk; the day plateau is the CSS gradient + clouds
   const fade = Math.max(
-    1 - smoothstepJS(0.25, 0.60, T),   // dawn dissolves into the day gradient
-    smoothstepJS(1.40, 1.75, T)        // dusk/night fades in
+    1 - smoothstepJS(0.35, 0.70, T),
+    smoothstepJS(1.30, 1.65, T)
   );
   sky.visible = fade > 0.005 && skyFadePatched;
-  if (skyFadePatched) {
-    skyU['u_skyFade'].value = fade;
-    skyU['u_nightBlue'].value = smoothstepJS(2.3, 2.9, T);   // deep-blue night sky
-  }
+  if (skyFadePatched) skyU['u_skyFade'].value = fade;
   renderer.toneMappingExposure = lerpNum(1.0, 0.45, fade);
 
-  // cloud shader follows the same phase blending (clouds themselves never change)
-  cloudMat.uniforms.u_dayMix.value = smoothstepJS(0.55, 0.9, T) * (1 - smoothstepJS(1.3, 1.7, T));
-  const c1 = new THREE.Color(0.85, 0.55, 0.45).lerp(new THREE.Color(0.42, 0.62, 0.85), k1);
-  c1.lerp(new THREE.Color(0.34, 0.26, 0.34), THREE.MathUtils.clamp(T - 1, 0, 1));
-  c1.lerp(new THREE.Color(0.05, 0.06, 0.12), k2);
-  cloudMat.uniforms.u_sky.value.copy(c1);
+  // cloud shader sun glow only while the gradient backdrop is showing
+  cloudMat.uniforms.u_dayMix.value = 1 - fade;
 }
-
-// stars (two brightness layers) and the moon, occluded by the signpost
-function makeStars(count, size) {
-  const geo = new THREE.BufferGeometry();
-  const pos = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    const v = new THREE.Vector3().setFromSphericalCoords(
-      40,
-      Math.acos(THREE.MathUtils.randFloatSpread(1.15)),
-      THREE.MathUtils.randFloat(0, Math.PI * 2)
-    );
-    pos.set([v.x, v.y, v.z], i * 3);
-  }
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const mat = new THREE.PointsMaterial({
-    color: 0xcfdcff, size, sizeAttenuation: true, transparent: true, opacity: 0,
-    depthWrite: false, blending: THREE.AdditiveBlending
-  });
-  scene.add(new THREE.Points(geo, mat));
-  return mat;
-}
-const starMats = [makeStars(700, 0.28), makeStars(180, 0.55)];
-const moonMat = new THREE.MeshBasicMaterial({ color: 0xe8eef8, transparent: true, opacity: 0, depthWrite: false });
-const moon = new THREE.Mesh(new THREE.CircleGeometry(1.1, 40), moonMat);
-moon.position.setFromSphericalCoords(40, THREE.MathUtils.degToRad(14), THREE.MathUtils.degToRad(222));
-moon.lookAt(0, 0, 0);
-scene.add(moon);
-const moonGlowMat = new THREE.MeshBasicMaterial({
-  color: 0xbfd0ee, transparent: true, opacity: 0, depthWrite: false,
-  blending: THREE.AdditiveBlending, side: THREE.DoubleSide
-});
-const moonGlow = new THREE.Mesh(new THREE.CircleGeometry(2.6, 40), moonGlowMat);
-moonGlow.position.copy(moon.position);
-moonGlow.lookAt(0, 0, 0);
-moon.renderOrder = 4;
-moonGlow.renderOrder = 4;
-scene.add(moonGlow);
 
 /* Cloud layer: a large transparent plane carrying the drifting-cloud shader,
  * parked between the signpost (in front of it) and the sky dome (behind it). */
@@ -700,10 +648,11 @@ canvas.addEventListener('pointerup', (e) => {
 canvas.addEventListener('pointercancel', () => { downId = -1; });
 addEventListener('keydown', (e) => { if (e.key === 'Escape') unfocus(); });
 
-/* ---------------- Wheel: dawn → day → dusk → night ---------------- */
+/* ---------------- Wheel: dawn → day → dusk ---------------- */
 addEventListener('wheel', (e) => {
+  // slow progression: it takes several scrolls to move to the next phase
   skyState.target = THREE.MathUtils.clamp(
-    skyState.target + THREE.MathUtils.clamp(e.deltaY, -180, 180) * 0.0016, 0, 3);
+    skyState.target + THREE.MathUtils.clamp(e.deltaY, -180, 180) * 0.0009, 0, 2);
 }, { passive: true });
 
 /* ---------------- Main loop ---------------- */
@@ -711,13 +660,9 @@ renderer.setAnimationLoop((now) => {
   stepAnims(now);
   if (mode === 'overview') controls.update();   // camera is tween-driven otherwise
 
-  // time-of-day: dawn → day → dusk → night
+  // time-of-day: dawn → day → dusk
   skyState.t += (skyState.target - skyState.t) * Math.min(1, 0.05);
   applySkyPhase();
-  const night = smoothstepJS(2.35, 2.9, skyState.t);
-  starMats.forEach((m) => { m.opacity = night; });
-  moonMat.opacity = night;
-  moonGlowMat.opacity = night * 0.35;
 
   // the cloud quad is fullscreen in clip space; its NDC depth (0.5) sits
   // naturally behind the signpost and in front of the sky dome
